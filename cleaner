@@ -1,0 +1,8 @@
+#!/bin/zsh
+
+root="src/gpop"
+
+rm $root/**/*cpython*
+rm -r $root/**/__pycache__
+rm $root/**/*.c
+rm -r demo/__pycache__
