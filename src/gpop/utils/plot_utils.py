@@ -27,7 +27,7 @@ def orbit_3D(*orbits: ndarray) -> None:
 
     ax.set_facecolor('#292c33')
 
-    ax.axis('off')
+    # ax.axis('off')
 
     for orbit in orbits:
         ax.plot(orbit[0], orbit[1], orbit[2])
@@ -268,3 +268,42 @@ def periapsis(*cases) -> None:
     plt.show()
 
     return None
+
+
+def orbital_elements(t, s):
+
+    a, e, Omega, i, omega = ut.state2orbital(s)
+
+    ecos = e * np.cos(omega)
+
+    esin = e * np.sin(omega)
+
+    fig, ax = plt.subplots(2, 3, figsize=(18, 7))
+
+    t = (t - t[0]) / (24. * 3600.)
+
+    ax[0, 0].plot(t, a)  # type: ignore
+    ax[0, 0].set_xlabel("Days past initial epoch")  # type: ignore
+    ax[0, 0].set_ylabel("$a$ [km]")  # type: ignore
+
+    ax[1, 0].plot(t, e)  # type: ignore
+    ax[1, 0].set_xlabel("Days past initial epoch")  # type: ignore
+    ax[1, 0].set_ylabel("$e$")  # type: ignore
+
+    ax[0, 1].plot(t[1:], Omega[1:])  # type: ignore
+    ax[0, 1].set_xlabel("Days past initial epoch")  # type: ignore
+    ax[0, 1].set_ylabel(r"$\Omega$ [rad]")  # type: ignore
+
+    ax[1, 1].plot(t, i)  # type: ignore
+    ax[1, 1].set_xlabel("Days past initial epoch")  # type: ignore
+    ax[1, 1].set_ylabel(r"$i$ [deg]")  # type: ignore
+
+    ax[0, 2].plot(t, omega)  # type: ignore
+    ax[0, 2].set_xlabel("Days past initial epoch")  # type: ignore
+    ax[0, 2].set_ylabel(r"$\omega$ [deg]")  # type: ignore
+
+    ax[1, 2].plot(esin, ecos)  # type: ignore
+    ax[1, 2].set_xlabel(r"$e \sin\omega$")  # type: ignore
+    ax[1, 2].set_ylabel(r"$e \cos\omega$")  # type: ignore
+
+    plt.show()
