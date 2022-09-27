@@ -95,6 +95,18 @@ cdef class motion_law:
         double * _norm_n2_m
         double [:, ::1] norm_n2_m
 
+        # J2
+
+        bint use_J2
+        str J2_db_path
+        double J2
+
+        # C22
+
+        bint use_C22
+        str C22_db_path
+        double C22
+
         # Custom
 
         bint use_custom
@@ -105,3 +117,7 @@ cdef class motion_law:
     cdef void harmonics(self, const int max_deg, double t, double r_vec[3])
 
     cdef void third_body(self, double t, double r_vec[3], Body body)
+
+    cdef void harmonics_J2(self, double t, double r_vec[3])
+
+    cdef void harmonics_C22(self, double t, double r_vec[3])

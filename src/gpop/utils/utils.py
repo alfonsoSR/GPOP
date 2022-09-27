@@ -5,12 +5,15 @@ import spiceypy as spice
 import numpy as np
 import numpy.typing as npt
 from gpop.core.custom import Perturbation
+from gpop.pck.pck import moon_data
 
 # Type alias for Numpy arrays
 
 ndarray = npt.NDArray[np.float64]
 
 # ----- Case configuration ----- #
+
+MU_MOON, R_MOON = moon_data()
 
 
 @dataclass
@@ -64,6 +67,64 @@ class config_third_body:
             self.is_usable = False
 
 
+@dataclass
+class config_J2:
+
+    # Initialization indicator
+
+    is_usable: bool = field(init=False)
+
+    # Spherical harmonics' coefficients database
+
+    db_root: str = ""
+    db_name: str = ""
+    db_source: str = ""
+    db_path: str = field(init=False)
+
+    # Check for initialization
+
+    def __post_init__(self):
+
+        if self.db_root != "":
+
+            self.is_usable = True
+            self.db_path = f"{self.db_root}/{self.db_name}.db"
+
+        else:
+
+            self.is_usable = False
+            self.db_path = ""
+
+
+@dataclass
+class config_C22:
+
+    # Initialization indicator
+
+    is_usable: bool = field(init=False)
+
+    # Spherical harmonics' coefficients database
+
+    db_root: str = ""
+    db_name: str = ""
+    db_source: str = ""
+    db_path: str = field(init=False)
+
+    # Check for initialization
+
+    def __post_init__(self):
+
+        if self.db_root != "":
+
+            self.is_usable = True
+            self.db_path = f"{self.db_root}/{self.db_name}.db"
+
+        else:
+
+            self.is_usable = False
+            self.db_path = ""
+
+
 @dataclass(kw_only=True)
 class Case:
 
@@ -77,6 +138,8 @@ class Case:
     use_third_body: bool
     use_solar_radiation_pressure: bool
     use_custom_perturbations: bool
+    use_J2: bool
+    use_C22: bool
 
     # Choose what solver to use
 
@@ -103,6 +166,8 @@ class Case:
     non_sphericity: config_non_sphericity = config_non_sphericity()
     third_body: config_third_body = config_third_body()
     custom: type = Perturbation
+    J2: config_J2 = config_J2()
+    C22: config_C22 = config_C22()
 
     def __post_init__(self):
 
@@ -120,7 +185,7 @@ def case_info(case: Case) -> None:
 
     if case.days:
 
-        print(f"Time span:\t\t\t\t{case.tspan} days")
+        print(f"Time span:\t\t\t\t{case.tspan:0.0f} days")
 
     else:
 
@@ -138,6 +203,16 @@ def case_info(case: Case) -> None:
 
         print("\tThird body")
         print(f"\t\tBody list:\t\t{case.third_body.body_list}")
+
+    if case.use_J2:
+
+        print("\tJ2 Zonal harmonic")
+        print(f"\t\tGravity field model:\t{case.J2.db_name}")
+
+    if case.use_C22:
+
+        print("\tC22 Sectoral harmonic")
+        print(f"\t\tGravity field model:\t{case.C22.db_name}")
 
     if case.use_custom_perturbations:
 
@@ -417,3 +492,56 @@ def save_results(t: ndarray, s: ndarray, file: str) -> None:
     np.save(file, sol)
 
     print(f"Results saved to {file}.npy")
+
+
+def state2orbital(s: ndarray):
+
+    r_i = s[:3]
+    u_i = s[3:]
+
+    r, v = state2rv(s)
+
+    v_r = (r_i[0] * u_i[0] + r_i[1] * u_i[1] + r_i[2] * u_i[2]) / r
+
+    h_i = np.cross(r_i, u_i, axis=0)
+
+    h = np.sqrt(h_i[0] * h_i[0] + h_i[1] * h_i[1] + h_i[2] * h_i[2])
+
+    W_i = h_i / h
+
+    i = np.arccos(W_i[2]) * 180. / np.pi
+
+    e_k_i = np.array([[0., 0., 1.]]).swapaxes(0, 1)
+
+    N_i = np.cross(e_k_i, h_i, axis=0)
+
+    N = np.sqrt(N_i[0] * N_i[0] + N_i[1] * N_i[1] + N_i[2] * N_i[2])
+
+    M = (N_i[1] < 0.) * 1
+    GE = (N_i[1] >= 0.) * 1
+
+    Omega = 360. * M + (np.arccos(N_i[0] / N) * 180. * (GE - M) / np.pi)
+
+    e_i = ((v * v - MU_MOON / r) * r_i - r * v_r * u_i) / MU_MOON
+
+    e = np.sqrt(e_i[0] * e_i[0] + e_i[1] * e_i[1] + e_i[2] * e_i[2])
+
+    P_i = e_i / e
+
+    M = (P_i[2] < 0.) * 1
+    GE = (P_i[2] >= 0.) * 1
+
+    PN_N = (P_i[0] * N_i[0] + P_i[1] * N_i[1] + P_i[2] * N_i[2]) / N
+
+    omega = 360. * M + (np.arccos(PN_N) * 180. * (GE - M) / np.pi)
+
+    # M = (v_r < 0.) * 1
+    # GE = (v_r >= 0.) * 1
+
+    # Pr_r = (P_i[0] * r_i[0] + P_i[1] * r_i[1] + P_i[2] * r_i[2]) / r
+
+    # nu = 360. * M + (np.arccos(Pr_r) * 180. * (GE - M) / np.pi)
+
+    a = h * h / (MU_MOON * (1. - e * e))
+
+    return np.array([a, e, Omega, i, omega])

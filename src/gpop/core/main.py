@@ -62,20 +62,15 @@ class Simulation:
 
                 print(
                     "No data provided for non-sphericity perturbation. "
-                    "Exit code: 0"
+                    "Exit code: -1"
                 )
-                sys.exit(0)
+                sys.exit(-1)
 
         # Third body
 
         if self.case.use_third_body:
 
             if self.case.third_body.is_usable:
-
-                # get_kernels(
-                #     self.case.kernels_root,
-                #     self.case.kernels_list
-                # )
 
                 body_list = [0] * 11
 
@@ -117,6 +112,44 @@ class Simulation:
                 )
                 sys.exit(0)
 
+        # J2
+
+        if self.case.use_J2:
+
+            if self.case.J2.is_usable:
+
+                assure_harmonics(
+                    self.case.J2.db_root,
+                    self.case.J2.db_source,
+                    self.case.J2.db_name
+                )
+
+            else:
+
+                print(
+                    "No data provided for J2 perturbation.\nExit code: -1"
+                )
+                sys.exit(-1)
+
+        # C22
+
+        if self.case.use_C22:
+
+            if self.case.C22.is_usable:
+
+                assure_harmonics(
+                    self.case.C22.db_root,
+                    self.case.C22.db_source,
+                    self.case.C22.db_name
+                )
+
+            else:
+
+                print(
+                    "No data provided for C22 perturbation.\nExit code: -1"
+                )
+                sys.exit(-1)
+        
         # Solar radiation pressure
 
         if self.case.use_solar_radiation_pressure:

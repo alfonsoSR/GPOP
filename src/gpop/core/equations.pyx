@@ -129,6 +129,38 @@ cdef class motion_law:
 
             self.c = clight_c()
 
+        if case.use_J2:
+
+            self.use_J2 = 1
+
+            self.J2_db_path = case.J2.db_path
+
+            # Retrieve J2 value from database
+
+            with sqlite(self.J2_db_path) as db:
+
+                db.execute(
+                    "select Clm from ord where (fk_deg = 2 and ord = 0);"
+                )
+
+                self.J2 = db.fetchone()[0]
+
+        if case.use_C22:
+
+            self.use_C22 = 1
+
+            self.C22_db_path = case.C22.db_path
+
+            # Retrieve C22 value from database
+
+            with sqlite(self.C22_db_path) as db:
+
+                db.execute(
+                    "select Clm from ord where (fk_deg = 2 and ord = 2);"
+                )
+
+                self.C22 = db.fetchone()[0]
+
         if case.use_custom_perturbations:
 
             self.use_custom = 1
@@ -436,6 +468,144 @@ cdef class motion_law:
                 (X_sat[i] / d_sat3) - (X_moon[i] / d_moon3)
             )
 
+    
+    cdef void harmonics_J2(self, double t, double r_vec[3]):
+
+        cdef:
+
+            double R_icrf2pa[3][3]
+
+            double r_i[3]
+            double ddr[3]
+
+            double r, r2, z2, f1, f2
+
+            int idx
+
+        # Transform position vector to PA frame
+
+        pxform_c("J2000", "MOON_PA_DE421", t, R_icrf2pa)
+
+        for idx in range(3):
+
+            r_i[idx] = (
+                R_icrf2pa[idx][0] * r_vec[0] +
+                R_icrf2pa[idx][1] * r_vec[1] +
+                R_icrf2pa[idx][2] * r_vec[2]
+            )
+
+        # Intermediate parameters
+
+        z2 = r_i[2] * r_i[2]
+
+        r2 = r_i[0] * r_i[0] + r_i[1] * r_i[1] + z2
+
+        r = sqrt(r2)
+
+        f1 = -3. * moon.mu * moon.R * moon.R * self.J2 / (2. * r2 * r2 * r)
+
+        f2 = 5. * z2 / r2
+
+        # Acceleration in PA reference frame
+
+        ddr[0] = f1 * ((f2 * r_i[0]) - r_i[0])
+        ddr[1] = f1 * ((f2 * r_i[1]) - r_i[1])
+        ddr[2] = f1 * ((f2 * r_i[2]) - 3. * r_i[2])
+
+        # Acceleration in SCRF
+
+        for idx in range(3):
+
+            self.ds[idx + 3] += (
+                R_icrf2pa[0][idx] * ddr[0] +
+                R_icrf2pa[1][idx] * ddr[1] +
+                R_icrf2pa[2][idx] * ddr[2]
+            )
+
+    
+    cdef void harmonics_C22(self, double t, double r_vec[3]):
+
+        cdef:
+
+            double R_icrf2pa[3][3]
+            
+            double z_partials[3]
+            double xy_partials[3]
+            double ddr[3]
+            double r_i[3]
+
+            double r, r2, sin_phi, cos_phi, sin_lambda, cos_lambda
+            double r_cos_phi, sin_2lambda, cos_2lambda, f1
+
+            int idx
+
+        # Transform position vector to PA reference frame
+
+        pxform_c("J2000", "MOON_PA_DE421", t, R_icrf2pa)
+
+        for idx in range(3):
+
+            r_i[idx] = (
+                R_icrf2pa[idx][0] * r_vec[0] +
+                R_icrf2pa[idx][1] * r_vec[1] +
+                R_icrf2pa[idx][2] * r_vec[2]
+            )
+
+        # Intermediate parameters
+
+        r2 = r_i[0] * r_i[0] + r_i[1] * r_i[1] + r_i[2] * r_i[2]
+
+        r = sqrt(r2)
+
+        sin_phi = r_i[2] / r
+        cos_phi = sqrt(1. - sin_phi * sin_phi)
+
+        r_cos_phi = r * cos_phi
+
+        sin_lambda = 0.
+        cos_lambda = 0.
+
+        if cos_phi != 0.:
+
+            sin_lambda = r_i[1] / r_cos_phi
+            cos_lambda = r_i[0] / r_cos_phi
+
+        sin_2lambda = 2. * sin_lambda * cos_lambda
+        cos_2lambda = cos_lambda * cos_lambda - sin_lambda * sin_lambda
+
+        z_partials[0] = - sin_phi * cos_lambda
+        z_partials[1] = - sin_phi * sin_lambda
+        z_partials[2] = cos_phi
+
+        xy_partials[0] = - sin_lambda
+        xy_partials[1] = cos_lambda
+        xy_partials[2] = 0.
+
+        f1 = (
+            - moon.mu * moon.R * moon.R * self.C22 * sqrt(15.) * cos_phi /
+            (r2 * r2)
+        )
+
+        for idx in range(3):
+
+            ddr[idx] = f1 * (
+                sin_2lambda * xy_partials[idx] + cos_2lambda * (
+                    3. * r_i[idx] * cos_phi / (2. * r) +
+                    sin_phi * z_partials[idx]
+                )
+            )
+
+        # Transform acceleration to SCRF
+
+        for idx in range(3):
+
+            self.ds[idx + 3] += (
+                R_icrf2pa[0][idx] * ddr[0] +
+                R_icrf2pa[1][idx] * ddr[1] +
+                R_icrf2pa[2][idx] * ddr[2]
+            )
+
+
     def __call__(self, double t, double [:] s):
 
         cdef:
@@ -466,6 +636,14 @@ cdef class motion_law:
         if self.use_custom:
 
             self.custom.perturb(t, s, self.ds)
+
+        if self.use_J2:
+
+            self.harmonics_J2(t, r_vec)
+
+        if self.use_C22:
+
+            self.harmonics_C22(t, r_vec)
 
         return self.ds_array
 
